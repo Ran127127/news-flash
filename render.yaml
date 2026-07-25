@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: news-flash
+    runtime: python
+    repo: https://github.com/Ran127127/news-flash
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: HOST
+        value: 0.0.0.0
+    healthCheckPath: /health
+    plan: free
