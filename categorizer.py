@@ -26,6 +26,16 @@ AUTO_KEYWORDS = [
     "车", "轮", "胎", "刹",
 ]
 
+# Government sources — articles from these are forced into Policy only.
+# They must NOT leak into GM / Competitor even if they mention brand names.
+GOV_SOURCES = {
+    "工业和信息化部",
+    "国家发展和改革委员会",
+    "交通运输部",
+    "商务部",
+    "中国政府网",
+}
+
 # Source-name hints: government sources whose mandate inherently covers
 # automotive / transport policy.  When an article comes from one of these
 # sources we inject extra context so the auto-keyword gate is not too strict.
@@ -66,26 +76,35 @@ def classify_article(article):
     """
     Classify a single article into a category.
     Returns the category key (e.g. 'gm', 'competitor', 'policy') or None.
-    Policy articles must also contain automotive-related keywords.
-    """
-    text = (article.get("title", "") + " " + article.get("summary", "")).lower()
-    scores = {}
 
+    Government-source articles are forced into Policy only (if they pass
+    the automotive relevance check).  All other sources use normal scoring.
+    """
+    source = article.get("source", "")
+    text = (article.get("title", "") + " " + article.get("summary", "")).lower()
+
+    # ── Government sources → Policy only ──────────────────
+    if source in GOV_SOURCES:
+        policy_score = 0
+        for kw in CATEGORIES["policy"]["keywords"]:
+            if kw.lower() in text:
+                policy_score += len(kw.lower())
+        if policy_score > 0 and _has_auto_keyword(article):
+            return "policy"
+        return None
+
+    # ── Normal scoring for all other sources ──────────────
+    scores = {}
     for cat_key, cat_def in CATEGORIES.items():
         score = 0
         for kw in cat_def["keywords"]:
             kw_lower = kw.lower()
             if kw_lower in text:
-                # Longer keywords get higher weight
                 score += len(kw_lower)
         scores[cat_key] = score
 
-    # Pick the category with the highest score
     best_cat = max(scores, key=scores.get)
     if scores[best_cat] > 0:
-        # Policy articles must also be automotive-related
-        if best_cat == "policy" and not _has_auto_keyword(article):
-            return None
         return best_cat
     return None
 
