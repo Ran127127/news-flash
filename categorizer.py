@@ -18,7 +18,7 @@ AUTO_KEYWORDS = [
     "交通", "运输", "出行", "乘车",
     "车牌", "驾照", "违章", "事故",
     "发动机", "电池", "充电", "续航",
-    "车企", "车企", "厂商", "品牌",
+    "车企", "厂商", "品牌",
     "buick", "chevrolet", "cadillac", "gm", "通用",
     "toyota", "honda", "nissan", "vw", "大众",
     "byd", "tesla", "nio", "理想", "小鹏", "蔚来",
@@ -26,9 +26,35 @@ AUTO_KEYWORDS = [
     "车", "轮", "胎", "刹",
 ]
 
+# Source-name hints: government sources whose mandate inherently covers
+# automotive / transport policy.  When an article comes from one of these
+# sources we inject extra context so the auto-keyword gate is not too strict.
+SOURCE_AUTO_HINT = {
+    "工业和信息化部": ["工业", "制造", "产业", "汽车", "新能源", "充电", "车企"],
+    "交通运输部":     ["交通", "运输", "公路", "高速", "出行", "道路"],
+    "国家发展和改革委员会": ["发改", "经济", "价格", "产业"],
+    "商务部":         ["商务", "贸易", "消费", "汽车", "出口"],
+    "中国政府网":     ["交通", "运输", "汽车"],
+}
 
-def _has_auto_keyword(text):
-    """Check if text contains at least one automotive keyword."""
+
+def _has_auto_keyword(article):
+    """
+    Check if an article is automotive-related.
+    Combines the article's title+summary with source-name hints.
+    """
+    text = (
+        article.get("title", "")
+        + " " + article.get("summary", "")
+        + " " + article.get("source", "")
+    ).lower()
+
+    # Add source-specific hints
+    source = article.get("source", "")
+    for src_name, hints in SOURCE_AUTO_HINT.items():
+        if src_name in source:
+            text += " " + " ".join(hints)
+
     text_lower = text.lower()
     for kw in AUTO_KEYWORDS:
         if kw.lower() in text_lower:
@@ -58,7 +84,7 @@ def classify_article(article):
     best_cat = max(scores, key=scores.get)
     if scores[best_cat] > 0:
         # Policy articles must also be automotive-related
-        if best_cat == "policy" and not _has_auto_keyword(text):
+        if best_cat == "policy" and not _has_auto_keyword(article):
             return None
         return best_cat
     return None
