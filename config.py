@@ -40,7 +40,7 @@ CATEGORIES = {
             "\u851a\u6765", "NIO", "ET5", "ET7", "ES6", "ES8",
             "\u5c0f\u9e4f", "XPeng", "P7", "G6", "G9",
             "\u7406\u60f3", "Li Auto", "L7", "L8", "L9",
-            "\u54c1\u724c", "\u6781\u6c2a", "\u96f6\u8dd1", "\u54ea\u5412",
+            "\u6781\u6c2a", "\u96f6\u8dd1", "\u54ea\u5412",
             "\u7279\u65af\u62c9", "Tesla", "Model 3", "Model Y",
             "\u5e7f\u6c7d\u57c3\u5b89", "\u957f\u57ce\u6c7d\u8f66", "\u5409\u5229", "\u5947\u745e",
             "\u65b0\u80fd\u6e90", "\u7eaf\u7535", "\u63d2\u6df7", "\u589e\u7a0b",

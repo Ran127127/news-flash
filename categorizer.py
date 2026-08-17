@@ -1,7 +1,10 @@
 """
 News Flash Categorizer
 ======================
-Classify articles into categories based on keyword matching.
+Strict source-aware classification:
+  - Policy:     ONLY official government sources with automotive relevance
+  - GM:         ONLY GM company & its brands (Cadillac, Buick, Chevrolet)
+  - Competitor: ONLY competitor brand news
 """
 
 import logging
@@ -9,24 +12,8 @@ from config import CATEGORIES
 
 logger = logging.getLogger(__name__)
 
-# Automotive-related keywords for Policy validation
-# Policy articles must also contain at least one of these to be classified as Policy
-AUTO_KEYWORDS = [
-    "汽车", "车辆", "轿车", "客车", "货车", "卡车",
-    "新能源", "电动车", "燃油车", "混动", "插电",
-    "驾驶", "行驶", "车道", "公路", "高速", "道路",
-    "交通", "运输", "出行", "乘车",
-    "车牌", "驾照", "违章", "事故",
-    "发动机", "电池", "充电", "续航",
-    "车企", "厂商", "品牌",
-    "buick", "chevrolet", "cadillac", "gm", "通用",
-    "toyota", "honda", "nissan", "vw", "大众",
-    "byd", "tesla", "nio", "理想", "小鹏", "蔚来",
-    "model", "ev", "hev", "phev",
-    "车", "轮", "胎", "刹",
-]
-
-# Government sources — articles from these are forced into Policy only.
+# ── Government sources → Policy only ──────────────────────────
+# Articles from these sources can ONLY go to Policy.
 # They must NOT leak into GM / Competitor even if they mention brand names.
 GOV_SOURCES = {
     "工业和信息化部",
@@ -36,30 +23,44 @@ GOV_SOURCES = {
     "中国政府网",
 }
 
-# Source-name hints: government sources whose mandate inherently covers
-# automotive / transport policy.  When an article comes from one of these
-# sources we inject extra context so the auto-keyword gate is not too strict.
+# Source-name hints: inject implicit automotive context for government
+# sources so the auto-keyword gate is not too strict on sparse summaries.
 SOURCE_AUTO_HINT = {
-    "工业和信息化部": ["工业", "制造", "产业", "汽车", "新能源", "充电", "车企"],
-    "交通运输部":     ["交通", "运输", "公路", "高速", "出行", "道路"],
+    "工业和信息化部":       ["工业", "制造", "产业", "汽车", "新能源", "充电", "车企"],
+    "交通运输部":           ["交通", "运输", "公路", "高速", "出行", "道路"],
     "国家发展和改革委员会": ["发改", "经济", "价格", "产业"],
-    "商务部":         ["商务", "贸易", "消费", "汽车", "出口"],
-    "中国政府网":     ["交通", "运输", "汽车"],
+    "商务部":               ["商务", "贸易", "消费", "汽车", "出口"],
+    "中国政府网":           ["交通", "运输", "汽车"],
 }
+
+# Automotive keywords used to validate government-source articles
+AUTO_KEYWORDS = [
+    "汽车", "车辆", "轿车", "客车", "货车", "卡车",
+    "新能源", "电动车", "燃油车", "混动", "插电",
+    "驾驶", "行驶", "车道", "公路", "高速", "道路",
+    "交通", "运输", "出行", "乘车",
+    "车牌", "驾照", "违章", "事故",
+    "发动机", "电池", "充电", "续航",
+    "车企", "厂商",
+    "buick", "chevrolet", "cadillac", "gm", "通用",
+    "toyota", "honda", "nissan", "vw", "大众",
+    "byd", "tesla", "nio", "理想", "小鹏", "蔚来",
+    "model", "ev", "hev", "phev",
+    "车", "轮", "胎", "刹",
+]
 
 
 def _has_auto_keyword(article):
     """
-    Check if an article is automotive-related.
-    Combines the article's title+summary with source-name hints.
+    Check if a government-source article is automotive-related.
+    Combines title + summary + source name + source-specific hints.
     """
     text = (
         article.get("title", "")
         + " " + article.get("summary", "")
         + " " + article.get("source", "")
-    ).lower()
+    )
 
-    # Add source-specific hints
     source = article.get("source", "")
     for src_name, hints in SOURCE_AUTO_HINT.items():
         if src_name in source:
@@ -72,40 +73,49 @@ def _has_auto_keyword(article):
     return False
 
 
+def _score_text(text, keywords):
+    """Sum of keyword lengths for all keywords found in text."""
+    score = 0
+    text_lower = text.lower()
+    for kw in keywords:
+        if kw.lower() in text_lower:
+            score += len(kw.lower())
+    return score
+
+
 def classify_article(article):
     """
     Classify a single article into a category.
-    Returns the category key (e.g. 'gm', 'competitor', 'policy') or None.
 
-    Government-source articles are forced into Policy only (if they pass
-    the automotive relevance check).  All other sources use normal scoring.
+    Rules:
+      1. Government sources → Policy ONLY (if automotive-related).
+      2. Non-government sources → GM or Competitor by keyword scoring.
+         Policy is NOT available to non-government sources (media reports
+         about policy are not "official policy news").
     """
     source = article.get("source", "")
-    text = (article.get("title", "") + " " + article.get("summary", "")).lower()
+    text = article.get("title", "") + " " + article.get("summary", "")
 
-    # ── Government sources → Policy only ──────────────────
+    # ── Government sources → Policy only ──────────────────────
     if source in GOV_SOURCES:
-        policy_score = 0
-        for kw in CATEGORIES["policy"]["keywords"]:
-            if kw.lower() in text:
-                policy_score += len(kw.lower())
+        policy_score = _score_text(text, CATEGORIES["policy"]["keywords"])
         if policy_score > 0 and _has_auto_keyword(article):
             return "policy"
         return None
 
-    # ── Normal scoring for all other sources ──────────────
-    scores = {}
-    for cat_key, cat_def in CATEGORIES.items():
-        score = 0
-        for kw in cat_def["keywords"]:
-            kw_lower = kw.lower()
-            if kw_lower in text:
-                score += len(kw_lower)
-        scores[cat_key] = score
+    # ── Non-government sources → GM or Competitor only ────────
+    gm_score = _score_text(text, CATEGORIES["gm"]["keywords"])
+    comp_score = _score_text(text, CATEGORIES["competitor"]["keywords"])
 
-    best_cat = max(scores, key=scores.get)
-    if scores[best_cat] > 0:
-        return best_cat
+    # GM Authority source defaults to GM if no strong competitor signal
+    if source == "GM Authority" and gm_score == 0:
+        return "gm"
+
+    if gm_score > 0 or comp_score > 0:
+        if gm_score >= comp_score:
+            return "gm"
+        return "competitor"
+
     return None
 
 
